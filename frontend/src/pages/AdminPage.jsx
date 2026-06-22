@@ -8,8 +8,7 @@ import {
   Button, IconButton
 } from '../components/Form.jsx'
 import useApi from '../hooks/useApi'
-import { TagBadge, TagBadgeList } from '../components/TagBadge.jsx'
-import TagCloud from '../components/TagCloud.jsx'
+import { TagBadge, TagBadgeList, TagCloud } from '../components/tags/index.js'
 
 function ToastProvider() {
   return null

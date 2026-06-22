@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
-import { TagBadge } from './TagBadge'
+import { TagBadge } from './TagBadge.jsx'
+import { groupTagsByUsage } from './tagUtils.js'
 
 export function TagCloud({ onSelectTag, limit = 10 }) {
   const [tags, setTags] = useState([])
@@ -14,7 +15,8 @@ export function TagCloud({ onSelectTag, limit = 10 }) {
     try {
       const res = await fetch(`/api/tags/popular?limit=${limit}`)
       if (res.ok) {
-        setTags(await res.json())
+        const data = await res.json()
+        setTags(groupTagsByUsage(data))
       }
     } catch (e) {
     } finally {
@@ -50,6 +52,7 @@ export function TagCloud({ onSelectTag, limit = 10 }) {
         const opacity = 0.6 + ratio * 0.4
         return (
           <span
+            key={tag.id}
             onClick={() => onSelectTag?.(tag)}
             style={{
               cursor: onSelectTag ? 'pointer' : 'default',

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
-import { TagBadge } from './TagBadge'
+import { TagBadge } from './TagBadge.jsx'
+import { normalizeTags } from './tagUtils.js'
 
 export function TagInput({ value = [], onChange, placeholder = '输入标签，逗号分隔...', style }) {
   const [input, setInput] = useState('')
@@ -47,7 +48,7 @@ export function TagInput({ value = [], onChange, placeholder = '输入标签，�
     if (!trimmed) return
     if (tagNames.includes(trimmed)) return
     const newTag = { name: trimmed, id: null, color: null, _new: true }
-    const next = [...value, newTag]
+    const next = normalizeTags([...value, newTag])
     onChange?.(next)
     setInput('')
     setSuggestions([])
@@ -57,7 +58,7 @@ export function TagInput({ value = [], onChange, placeholder = '输入标签，�
 
   const addTag = (tag) => {
     if (tagNames.includes(tag.name)) return
-    const next = [...value, tag]
+    const next = normalizeTags([...value, tag])
     onChange?.(next)
     setInput('')
     setSuggestions([])
@@ -90,7 +91,10 @@ export function TagInput({ value = [], onChange, placeholder = '输入标签，�
         addTagByName(input)
       }
     } else if (e.key === 'Backspace' && !input && value.length > 0) {
-      removeTag(value[value.length - 1])
+      const lastTag = value[value.length - 1]
+      if (!lastTag.deleted || lastTag.deleted === 0) {
+        removeTag(lastTag)
+      }
     } else if (e.key === 'ArrowDown') {
       e.preventDefault()
       setShowDropdown(true)

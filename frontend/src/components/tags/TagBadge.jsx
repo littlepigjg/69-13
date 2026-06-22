@@ -1,18 +1,22 @@
 import React from 'react'
+import { hexToRgba, isTagDeleted } from './tagUtils.js'
 
-export function TagBadge({ tag, onRemove, size = 'md', style }) {
+export function TagBadge({ tag, onRemove, size = 'md', style, showDeleted = true }) {
   if (!tag) return null
-  const color = tag.color || '#6366f1'
+  const deleted = showDeleted && isTagDeleted(tag)
+  const baseColor = tag.color || '#6366f1'
+  const color = deleted ? '#9ca3af' : baseColor
   const sizes = {
     sm: { padding: '2px 8px', fontSize: 11 },
     md: { padding: '3px 10px', fontSize: 12 },
     lg: { padding: '5px 14px', fontSize: 13 }
   }
   const s = sizes[size] || sizes.md
-  const bgLight = hexToRgba(color, 0.12)
+  const bgLight = deleted ? 'rgba(156, 163, 175, 0.12)' : hexToRgba(color, 0.12)
 
   return (
     <span
+      title={deleted ? '该标签已删除（历史记录保留）' : undefined}
       style={{
         display: 'inline-flex',
         alignItems: 'center',
@@ -23,6 +27,7 @@ export function TagBadge({ tag, onRemove, size = 'md', style }) {
         color: color,
         fontWeight: 600,
         lineHeight: 1.4,
+        opacity: deleted ? 0.7 : 1,
         ...style
       }}
     >
@@ -35,8 +40,11 @@ export function TagBadge({ tag, onRemove, size = 'md', style }) {
           flexShrink: 0
         }}
       />
-      <span>{tag.name}</span>
-      {onRemove && (
+      <span style={{
+        textDecoration: deleted ? 'line-through' : 'none',
+        fontStyle: deleted ? 'italic' : 'normal'
+      }}>{tag.name}</span>
+      {onRemove && !deleted && (
         <button
           onClick={e => { e.stopPropagation(); onRemove?.(tag) }}
           style={{
@@ -58,13 +66,6 @@ export function TagBadge({ tag, onRemove, size = 'md', style }) {
       )}
     </span>
   )
-}
-
-function hexToRgba(hex, alpha) {
-  const r = parseInt(hex.slice(1, 3), 16)
-  const g = parseInt(hex.slice(3, 5), 16)
-  const b = parseInt(hex.slice(5, 7), 16)
-  return `rgba(${r},${g},${b},${alpha})`
 }
 
 export function TagBadgeList({ tags, onRemoveTag, size = 'sm' }) {
