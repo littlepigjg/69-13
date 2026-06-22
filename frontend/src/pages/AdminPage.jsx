@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useEffect } from 'react'
 import { useApp } from '../App.jsx'
 import moment from 'moment'
 import Modal from '../components/Modal.jsx'
@@ -8,6 +8,8 @@ import {
   Button, IconButton
 } from '../components/Form.jsx'
 import useApi from '../hooks/useApi'
+import { TagBadge, TagBadgeList } from '../components/TagBadge.jsx'
+import TagCloud from '../components/TagCloud.jsx'
 
 function ToastProvider() {
   return null
@@ -260,6 +262,210 @@ function MaintenanceForm({ initial, services, onSubmit, onCancel }) {
   )
 }
 
+function TagForm({ initial, onSubmit, onCancel }) {
+  const [form, setForm] = useState({
+    name: initial?.name || '',
+    color: initial?.color || '#6366f1'
+  })
+  const [errors, setErrors] = useState({})
+
+  const presetColors = [
+    '#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#6366f1',
+    '#8b5cf6', '#ec4899', '#14b8a6', '#f97316', '#84cc16',
+    '#06b6d4', '#64748b'
+  ]
+
+  const validate = () => {
+    const e = {}
+    if (!form.name.trim()) e.name = '请输入标签名称'
+    setErrors(e)
+    return Object.keys(e).length === 0
+  }
+
+  const submit = async (e) => {
+    e.preventDefault()
+    if (!validate()) return
+    await onSubmit({ name: form.name.trim(), color: form.color })
+  }
+
+  return (
+    <form onSubmit={submit}>
+      <FormField label="标签名称" error={errors.name}>
+        <TextInput
+          value={form.name}
+          onChange={v => setForm(f => ({ ...f, name: v }))}
+          placeholder="如: 网络抖动、部署进行中"
+        />
+      </FormField>
+
+      <FormField label="标签颜色">
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
+          {presetColors.map(c => (
+            <button
+              key={c}
+              type="button"
+              onClick={() => setForm(f => ({ ...f, color: c }))}
+              style={{
+                width: 28,
+                height: 28,
+                borderRadius: '50%',
+                background: c,
+                border: form.color === c ? '3px solid #1f2937' : '2px solid #fff',
+                boxShadow: form.color === c ? '0 0 0 2px #e5e7eb' : '0 1px 3px rgba(0,0,0,0.1)',
+                cursor: 'pointer',
+                transition: 'all 0.15s'
+              }}
+            />
+          ))}
+        </div>
+        <TextInput
+          type="color"
+          value={form.color}
+          onChange={v => setForm(f => ({ ...f, color: v }))}
+          style={{ height: 36, padding: 2, width: 80 }}
+        />
+      </FormField>
+
+      <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 20 }}>
+        <Button onClick={onCancel}>取消</Button>
+        <Button variant="primary" type="submit">
+          {initial ? '保存修改' : '创建标签'}
+        </Button>
+      </div>
+    </form>
+  )
+}
+
+function TagStatsModal({ tag, onClose }) {
+  const [stats, setStats] = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    if (tag) {
+      loadStats()
+    }
+  }, [tag])
+
+  const loadStats = async () => {
+    setLoading(true)
+    try {
+      const res = await fetch(`/api/tags/${tag.id}/stats`)
+      if (res.ok) {
+        const data = await res.json()
+        setStats(data)
+      }
+    } catch (e) {
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  if (!tag) return null
+
+  const results = stats?.recentResults || []
+  const failedResults = results.filter(r => !r.success && !r.is_maintenance)
+
+  let avgDuration = 0
+  if (failedResults.length >= 2) {
+    let totalGap = 0
+    let gapCount = 0
+    for (let i = 0; i < failedResults.length - 1; i++) {
+      const t1 = new Date(failedResults[i].timestamp)
+      const t2 = new Date(failedResults[i + 1].timestamp)
+      const diff = Math.abs(t1 - t2) / 1000
+      if (diff < 3600) {
+        totalGap += diff
+        gapCount++
+      }
+    }
+    if (gapCount > 0) avgDuration = Math.round(totalGap / gapCount)
+  }
+
+  return (
+    <Modal
+      title={`标签统计 - ${tag.name}`}
+      onClose={onClose}
+      width={800}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
+        <TagBadge tag={tag} size="lg" />
+        <span style={{ fontSize: 13, color: '#6b7280' }}>
+          共标记 {stats?.usageCount || 0} 次
+        </span>
+      </div>
+
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+        gap: 12,
+        marginBottom: 20
+      }}>
+        <div style={{ background: '#f9fafb', padding: 14, borderRadius: 10 }}>
+          <div style={{ fontSize: 11, color: '#6b7280', marginBottom: 4 }}>标记次数</div>
+          <div style={{ fontSize: 20, fontWeight: 700, color: '#1f2937' }}>
+            {stats?.usageCount || 0}
+          </div>
+        </div>
+        <div style={{ background: '#f9fafb', padding: 14, borderRadius: 10 }}>
+          <div style={{ fontSize: 11, color: '#6b7280', marginBottom: 4 }}>关联故障数</div>
+          <div style={{ fontSize: 20, fontWeight: 700, color: '#dc2626' }}>
+            {failedResults.length}
+          </div>
+        </div>
+        <div style={{ background: '#f9fafb', padding: 14, borderRadius: 10 }}>
+          <div style={{ fontSize: 11, color: '#6b7280', marginBottom: 4 }}>平均影响时长</div>
+          <div style={{ fontSize: 20, fontWeight: 700, color: '#4f46e5' }}>
+            {avgDuration > 0 ? formatDuration(avgDuration) : '—'}
+          </div>
+        </div>
+        <div style={{ background: '#f9fafb', padding: 14, borderRadius: 10 }}>
+          <div style={{ fontSize: 11, color: '#6b7280', marginBottom: 4 }}>影响服务数</div>
+          <div style={{ fontSize: 20, fontWeight: 700, color: '#10b981' }}>
+            {new Set(results.map(r => r.service_id)).size}
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <h4 style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>最近标记记录</h4>
+        {loading ? (
+          <div style={{ color: '#9ca3af', padding: 20, textAlign: 'center' }}>加载中...</div>
+        ) : results.length === 0 ? (
+          <div style={{ color: '#9ca3af', padding: 20, textAlign: 'center' }}>暂无记录</div>
+        ) : (
+          <div style={{ maxHeight: 400, overflowY: 'auto' }}>
+            {results.map(r => (
+              <div key={r.id} style={{
+                display: 'grid',
+                gridTemplateColumns: 'auto 1fr',
+                gap: 10,
+                padding: '10px 0',
+                borderBottom: '1px solid #f3f4f6'
+              }}>
+                <div style={{
+                  width: 8, height: 8, borderRadius: '50%',
+                  marginTop: 5,
+                  background: r.success ? '#10b981' : r.is_maintenance ? '#f59e0b' : '#ef4444'
+                }} />
+                <div>
+                  <div style={{ fontSize: 13, color: '#374151', fontWeight: 500 }}>
+                    {r.service_name || `服务 #${r.service_id}`}
+                  </div>
+                  <div style={{ fontSize: 11, color: '#6b7280' }}>
+                    {moment(r.timestamp).format('YYYY-MM-DD HH:mm:ss')}
+                    {r.response_time_ms && ` · ${r.response_time_ms}ms`}
+                    {r.error_message && ` · ${r.error_message.substring(0, 50)}`}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </Modal>
+  )
+}
+
 function Toast({ message, type }) {
   if (!message) return null
   return (
@@ -285,14 +491,40 @@ function useToast() {
   return { toast, show }
 }
 
+function formatDuration(seconds) {
+  if (seconds < 60) return `${seconds}秒`
+  if (seconds < 3600) return `${Math.round(seconds / 60)}分钟`
+  return `${(seconds / 3600).toFixed(1)}小时`
+}
+
 export default function AdminPage() {
   const { services, fetchServices, maintenance, fetchMaintenance } = useApp()
   const [tab, setTab] = useState('services')
   const [showServiceForm, setShowServiceForm] = useState(null)
   const [showMaintForm, setShowMaintForm] = useState(null)
+  const [showTagForm, setShowTagForm] = useState(null)
+  const [statsTag, setStatsTag] = useState(null)
   const [openMaintenanceMenu, setOpenMaintenanceMenu] = useState(null)
   const { get, post, put, del } = useApi('/api')
   const { toast, show: showToast } = useToast()
+
+  const [allTags, setAllTags] = useState([])
+  const [tagsRefreshKey, setTagsRefreshKey] = useState(0)
+
+  useEffect(() => {
+    if (tab === 'tags') {
+      loadTags()
+    }
+  }, [tab, tagsRefreshKey])
+
+  const loadTags = async () => {
+    try {
+      const res = await fetch('/api/tags')
+      if (res.ok) {
+        setAllTags(await res.json())
+      }
+    } catch (e) {}
+  }
 
   const handleCreateService = async (data) => {
     try {
@@ -396,6 +628,39 @@ export default function AdminPage() {
     }
   }
 
+  const handleCreateTag = async (data) => {
+    try {
+      await post('/tags', data)
+      setTagsRefreshKey(k => k + 1)
+      setShowTagForm(null)
+      showToast('标签已创建')
+    } catch (e) {
+      showToast(e.message || '创建失败', 'error')
+    }
+  }
+
+  const handleUpdateTag = async (id, data) => {
+    try {
+      await put(`/tags/${id}`, data)
+      setTagsRefreshKey(k => k + 1)
+      setShowTagForm(null)
+      showToast('标签已更新')
+    } catch (e) {
+      showToast(e.message || '更新失败', 'error')
+    }
+  }
+
+  const handleDeleteTag = async (tag) => {
+    if (!window.confirm(`确定删除标签「${tag.name}」？\n删除后历史记录中的该标签将被隐藏但不会丢失。`)) return
+    try {
+      await del(`/tags/${tag.id}`)
+      setTagsRefreshKey(k => k + 1)
+      showToast('标签已删除')
+    } catch (e) {
+      showToast(e.message || '删除失败', 'error')
+    }
+  }
+
   const activeMaintenance = useMemo(() => maintenance.filter(m => {
     const now = moment()
     const start = moment(m.start_time)
@@ -419,18 +684,19 @@ export default function AdminPage() {
         <div>
           <h2 style={{ fontSize: 28, fontWeight: 800 }}>管理配置</h2>
           <p style={{ color: '#6b7280', fontSize: 14, marginTop: 4 }}>
-            管理监控服务端点和维护窗口配置
+            管理监控服务端点、维护窗口和故障标签
           </p>
         </div>
         <Button
           variant="primary"
           icon="+"
-          onClick={() => tab === 'services'
-            ? setShowServiceForm({ mode: 'create' })
-            : setShowMaintForm({ mode: 'create' })
-          }
+          onClick={() => {
+            if (tab === 'services') setShowServiceForm({ mode: 'create' })
+            else if (tab === 'maintenance') setShowMaintForm({ mode: 'create' })
+            else if (tab === 'tags') setShowTagForm({ mode: 'create' })
+          }}
         >
-          {tab === 'services' ? '添加监控服务' : '创建维护窗口'}
+          {tab === 'services' ? '添加监控服务' : tab === 'maintenance' ? '创建维护窗口' : '创建标签'}
         </Button>
       </div>
 
@@ -472,6 +738,12 @@ export default function AdminPage() {
           label="维护窗口"
           badge={maintenance.length}
           onClick={() => setTab('maintenance')}
+        />
+        <TabButton
+          active={tab === 'tags'}
+          label="标签管理"
+          badge={allTags.length}
+          onClick={() => setTab('tags')}
         />
       </div>
 
@@ -715,6 +987,120 @@ export default function AdminPage() {
         </div>
       )}
 
+      {tab === 'tags' && (
+        <div>
+          <div style={{
+            background: '#fff',
+            borderRadius: 12,
+            padding: 20,
+            border: '1px solid #e5e7eb',
+            marginBottom: 20
+          }}>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginBottom: 12,
+              flexWrap: 'wrap',
+              gap: 12
+            }}>
+              <div>
+                <h3 style={{ fontSize: 16, fontWeight: 600 }}>🔥 热门标签</h3>
+                <p style={{ fontSize: 12, color: '#6b7280', marginTop: 4 }}>
+                  出现频率最高的10个标签，点击查看统计分析
+                </p>
+              </div>
+            </div>
+            <TagCloud
+              limit={10}
+              onSelectTag={(tag) => setStatsTag(tag)}
+            />
+          </div>
+
+          {allTags.length === 0 && (
+            <EmptyState
+              icon="🏷️"
+              title="还没有创建任何标签"
+              hint="点击右上角「创建标签」按钮，或在检测结果详情中直接输入标签"
+            />
+          )}
+
+          {allTags.length > 0 && (
+            <div style={{
+              background: '#fff',
+              borderRadius: 12,
+              border: '1px solid #e5e7eb',
+              overflow: 'hidden'
+            }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ background: '#f9fafb' }}>
+                    <th style={{
+                      padding: '12px 16px',
+                      textAlign: 'left',
+                      fontSize: 12,
+                      fontWeight: 600,
+                      color: '#6b7280',
+                      borderBottom: '1px solid #e5e7eb'
+                    }}>标签</th>
+                    <th style={{
+                      padding: '12px 16px',
+                      textAlign: 'left',
+                      fontSize: 12,
+                      fontWeight: 600,
+                      color: '#6b7280',
+                      borderBottom: '1px solid #e5e7eb'
+                    }}>创建时间</th>
+                    <th style={{
+                      padding: '12px 16px',
+                      textAlign: 'right',
+                      fontSize: 12,
+                      fontWeight: 600,
+                      color: '#6b7280',
+                      borderBottom: '1px solid #e5e7eb'
+                    }}>操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {allTags.map(tag => (
+                    <tr key={tag.id} style={{ borderBottom: '1px solid #f3f4f6' }}>
+                      <td style={{ padding: '12px 16px' }}>
+                        <TagBadge tag={tag} size="md" />
+                      </td>
+                      <td style={{ padding: '12px 16px', fontSize: 12, color: '#6b7280' }}>
+                        {moment(tag.created_at).format('YYYY-MM-DD HH:mm')}
+                      </td>
+                      <td style={{ padding: '12px 16px', textAlign: 'right' }}>
+                        <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                          <IconButton
+                            icon="📊"
+                            color="primary"
+                            title="查看统计"
+                            onClick={() => setStatsTag(tag)}
+                          />
+                          <IconButton
+                            icon="✎"
+                            color="primary"
+                            title="编辑"
+                            onClick={() => setShowTagForm({ mode: 'edit', data: tag })}
+                          />
+                          <IconButton
+                            icon="✕"
+                            color="danger"
+                            title="删除"
+                            onClick={() => handleDeleteTag(tag)}
+                          />
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
       {showServiceForm && (
         <Modal
           title={showServiceForm.mode === 'create' ? '添加监控服务' : '编辑服务配置'}
@@ -749,6 +1135,30 @@ export default function AdminPage() {
             onCancel={() => setShowMaintForm(null)}
           />
         </Modal>
+      )}
+
+      {showTagForm && (
+        <Modal
+          title={showTagForm.mode === 'create' ? '创建标签' : '编辑标签'}
+          onClose={() => setShowTagForm(null)}
+          width={500}
+        >
+          <TagForm
+            initial={showTagForm.data}
+            onSubmit={showTagForm.mode === 'create'
+              ? handleCreateTag
+              : (data) => handleUpdateTag(showTagForm.data.id, data)
+            }
+            onCancel={() => setShowTagForm(null)}
+          />
+        </Modal>
+      )}
+
+      {statsTag && (
+        <TagStatsModal
+          tag={statsTag}
+          onClose={() => setStatsTag(null)}
+        />
       )}
     </div>
   )

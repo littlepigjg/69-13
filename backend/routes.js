@@ -136,7 +136,185 @@ router.get('/services/:id/results', async (req, res) => {
     const svc = await storage.services.getById(id);
     if (!svc) return res.status(404).json({ error: 'Service not found' });
     const results = await storage.checkResults.getLatest(id, limit);
-    res.json({ serviceId: id, results });
+    const resultIds = results.map(r => r.id);
+    const tagsMap = resultIds.length > 0
+      ? await storage.checkResultTags.getByResultIds(resultIds)
+      : {};
+    const enriched = results.map(r => ({ ...r, tags: tagsMap[r.id] || [] }));
+    res.json({ serviceId: id, results: enriched });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.get('/tags', async (req, res) => {
+  try {
+    const includeDeleted = req.query.includeDeleted === '1';
+    res.json(await storage.tags.getAll(includeDeleted));
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.get('/tags/popular', async (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit, 10) || 10, 50);
+    res.json(await storage.tags.getPopular(limit));
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.get('/tags/search', async (req, res) => {
+  try {
+    const keyword = (req.query.q || '').trim();
+    const limit = Math.min(parseInt(req.query.limit, 10) || 20, 100);
+    res.json(await storage.tags.search(keyword, limit));
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.get('/tags/:id', async (req, res) => {
+  try {
+    const tag = await storage.tags.getById(req.params.id);
+    if (!tag) return res.status(404).json({ error: 'Tag not found' });
+    res.json(tag);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.get('/tags/:id/stats', async (req, res) => {
+  try {
+    const stats = await storage.tags.getStats(req.params.id);
+    if (!stats) return res.status(404).json({ error: 'Tag not found' });
+    res.json(stats);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.post('/tags', async (req, res) => {
+  try {
+    const data = req.body || {};
+    if (!data.name || !data.name.trim()) {
+      return res.status(400).json({ error: 'Tag name is required' });
+    }
+    const created = await storage.tags.create({
+      name: data.name.trim(),
+      color: data.color
+    });
+    res.status(201).json(created);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.put('/tags/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const existing = await storage.tags.getById(id);
+    if (!existing) return res.status(404).json({ error: 'Tag not found' });
+    const data = req.body || {};
+    const allowed = ['name', 'color'];
+    const toUpdate = {};
+    for (const key of allowed) {
+      if (key in data) toUpdate[key] = data[key];
+    }
+    if (toUpdate.name) toUpdate.name = toUpdate.name.trim();
+    const updated = await storage.tags.update(id, toUpdate);
+    res.json(updated);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.delete('/tags/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const existing = await storage.tags.getById(id);
+    if (!existing) return res.status(404).json({ error: 'Tag not found' });
+    await storage.tags.remove(id);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.get('/results/:resultId/tags', async (req, res) => {
+  try {
+    const tags = await storage.checkResultTags.getByResultId(req.params.resultId);
+    res.json({ resultId: req.params.resultId, tags });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.put('/results/:resultId/tags', async (req, res) => {
+  try {
+    const data = req.body || {};
+    const tagNames = Array.isArray(data.tags) ? data.tags : [];
+    const tags = await storage.checkResultTags.setTags(req.params.resultId, tagNames);
+    res.json({ resultId: req.params.resultId, tags });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.post('/results/:resultId/tags', async (req, res) => {
+  try {
+    const data = req.body || {};
+    if (!data.name || !data.name.trim()) {
+      return res.status(400).json({ error: 'Tag name is required' });
+    }
+    const tags = await storage.checkResultTags.addTag(req.params.resultId, data.name);
+    res.status(201).json({ resultId: req.params.resultId, tags });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.delete('/results/:resultId/tags/:tagId', async (req, res) => {
+  try {
+    const tags = await storage.checkResultTags.removeTag(req.params.resultId, req.params.tagId);
+    res.json({ resultId: req.params.resultId, tags });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.get('/results/filter/tags', async (req, res) => {
+  try {
+    const tagIds = req.query.tagIds
+      ? String(req.query.tagIds).split(',').map(id => parseInt(id, 10)).filter(Boolean)
+      : [];
+    const serviceId = req.query.serviceId ? parseInt(req.query.serviceId, 10) : null;
+    const from = req.query.from || null;
+    const to = req.query.to || null;
+    const limit = Math.min(parseInt(req.query.limit, 10) || 500, 1000);
+    const results = await storage.checkResultTags.filterByTags({
+      tagIds, serviceId, from, to, limit
+    });
+    const resultIds = results.map(r => r.id);
+    const tagsMap = resultIds.length > 0
+      ? await storage.checkResultTags.getByResultIds(resultIds)
+      : {};
+    const enriched = results.map(r => ({ ...r, tags: tagsMap[r.id] || [] }));
+    res.json({ results, total: enriched.length });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: e.message });

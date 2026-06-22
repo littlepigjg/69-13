@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { useApp } from '../App.jsx'
 import StatusBadge from '../components/StatusBadge.jsx'
@@ -6,6 +6,11 @@ import Modal from '../components/Modal.jsx'
 import MiniAvailabilityBars from '../components/MiniAvailabilityBars.jsx'
 import { AvailabilityTrendChart, HourSelector } from '../components/Charts.jsx'
 import { formatRelativeTime } from '../lib/utils'
+import { TagBadge, TagBadgeList } from '../components/TagBadge.jsx'
+import TagInput from '../components/TagInput.jsx'
+import TagCloud from '../components/TagCloud.jsx'
+import { Button } from '../components/Form.jsx'
+import moment from 'moment'
 
 function ServiceCard({ service, onClick, selected }) {
   const statusColor = {
@@ -62,13 +67,218 @@ function ServiceCard({ service, onClick, selected }) {
   )
 }
 
+function ResultTimelineItem({ result, onEditTags }) {
+  const isFail = !result.success
+  const isMaint = result.is_maintenance
+
+  const statusMeta = isMaint
+    ? { label: '维护中', color: '#f59e0b', bg: '#fef3c7' }
+    : isFail
+      ? { label: '失败', color: '#ef4444', bg: '#fef2f2' }
+      : { label: '成功', color: '#10b981', bg: '#d1fae5' }
+
+  return (
+    <div style={{
+      display: 'grid',
+      gridTemplateColumns: 'auto 1fr',
+      gap: 12,
+      padding: '12px 0',
+      borderBottom: '1px solid #f3f4f6'
+    }}>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+        <div style={{
+          width: 12, height: 12, borderRadius: '50%',
+          background: statusMeta.color,
+          border: '2px solid #fff',
+          boxShadow: `0 0 0 2px ${statusMeta.color}33`
+        }} />
+        <div style={{
+          width: 2, flex: 1, marginTop: 4,
+          background: 'linear-gradient(to bottom, #e5e7eb, transparent)'
+        }} />
+      </div>
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
+          <span style={{
+            padding: '2px 8px', fontSize: 11, borderRadius: 4,
+            background: statusMeta.bg, color: statusMeta.color, fontWeight: 600
+          }}>{statusMeta.label}</span>
+          <span style={{ fontSize: 13, color: '#4b5563', fontWeight: 500 }}>
+            {moment(result.timestamp).format('YYYY-MM-DD HH:mm:ss')}
+          </span>
+          <span style={{ fontSize: 12, color: '#9ca3af' }}>
+            {formatRelativeTime(result.timestamp)}
+          </span>
+          {result.response_time_ms && (
+            <span style={{ fontSize: 12, color: '#6b7280' }}>
+              · {result.response_time_ms}ms
+            </span>
+          )}
+          {result.status_code && (
+            <span style={{ fontSize: 12, color: '#6b7280' }}>
+              · HTTP {result.status_code}
+            </span>
+          )}
+          {onEditTags && (isFail || result.tags?.length > 0) && (
+            <button
+              onClick={() => onEditTags(result)}
+              style={{
+                marginLeft: 'auto',
+                padding: '2px 10px',
+                fontSize: 11,
+                borderRadius: 4,
+                border: '1px solid #d1d5db',
+                background: '#fff',
+                color: '#4b5563',
+                cursor: 'pointer'
+              }}
+            >
+              {result.tags?.length > 0 ? '编辑标签' : '添加标签'}
+            </button>
+          )}
+        </div>
+        {result.error_message && (
+          <div style={{
+            fontSize: 12, color: '#7f1d1d',
+            fontFamily: 'monospace', wordBreak: 'break-all',
+            background: '#fef2f2', padding: '6px 10px',
+            borderRadius: 4, marginBottom: 6
+          }}>
+            {result.error_message}
+          </div>
+        )}
+        {result.tags && result.tags.length > 0 && (
+          <TagBadgeList tags={result.tags} size="sm" />
+        )}
+      </div>
+    </div>
+  )
+}
+
+function TagEditModal({ result, onClose, onSaved }) {
+  const [tags, setTags] = useState([])
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    setTags(result?.tags || [])
+  }, [result])
+
+  const save = async () => {
+    if (!result) return
+    setSaving(true)
+    try {
+      const tagNames = tags.map(t => t.name)
+      const res = await fetch(`/api/results/${result.id}/tags`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tags: tagNames })
+      })
+      if (res.ok) {
+        const data = await res.json()
+        onSaved?.(result.id, data.tags)
+        onClose?.()
+      }
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (!result) return null
+
+  return (
+    <Modal
+      title={`编辑标签 - #${result.id}`}
+      onClose={onClose}
+      width={600}
+      actions={
+        <>
+          <Button onClick={onClose}>取消</Button>
+          <Button variant="primary" onClick={save} disabled={saving}>
+            {saving ? '保存中...' : '保存'}
+          </Button>
+        </>
+      }
+    >
+      <div style={{ marginBottom: 16 }}>
+        <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 8 }}>
+          检测时间: {moment(result.timestamp).format('YYYY-MM-DD HH:mm:ss')}
+        </div>
+        {result.error_message && (
+          <div style={{
+            fontSize: 12, color: '#7f1d1d',
+            fontFamily: 'monospace', wordBreak: 'break-all',
+            background: '#fef2f2', padding: '8px 12px',
+            borderRadius: 6
+          }}>
+            {result.error_message}
+          </div>
+        )}
+      </div>
+
+      <div style={{ marginBottom: 16 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: '#374151', marginBottom: 8 }}>
+          标签
+        </div>
+        <TagInput
+          value={tags}
+          onChange={setTags}
+          placeholder="输入标签名称，逗号分隔，如: 网络抖动,部署中"
+        />
+      </div>
+
+      <div>
+        <div style={{ fontSize: 13, fontWeight: 600, color: '#374151', marginBottom: 8 }}>
+          热门标签
+        </div>
+        <TagCloud
+          limit={10}
+          onSelectTag={(tag) => {
+            if (!tags.find(t => (t.id && t.id === tag.id) || t.name === tag.name)) {
+              setTags([...tags, tag])
+            }
+          }}
+        />
+      </div>
+    </Modal>
+  )
+}
+
 function ServiceDetailPanel({ service, onClose }) {
   const [hours, setHours] = useState(24)
+  const [results, setResults] = useState([])
+  const [editingResult, setEditingResult] = useState(null)
+
+  useEffect(() => {
+    if (service) {
+      loadResults()
+    }
+  }, [service, hours])
+
+  const loadResults = async () => {
+    if (!service) return
+    try {
+      const res = await fetch(`/api/services/${service.id}/results?limit=100`)
+      if (res.ok) {
+        const data = await res.json()
+        setResults(data.results || [])
+      }
+    } catch (e) {}
+  }
+
+  const handleTagsSaved = (resultId, newTags) => {
+    setResults(prev => prev.map(r =>
+      r.id === resultId ? { ...r, tags: newTags } : r
+    ))
+  }
+
+  const failedResults = results.filter(r => !r.success && !r.is_maintenance)
+  const successResults = results.filter(r => r.success)
+  const maintResults = results.filter(r => r.is_maintenance)
 
   if (!service) return null
 
   return (
-    <Modal title={`${service.name} - 详情`} onClose={onClose} width={960}>
+    <Modal title={`${service.name} - 详情`} onClose={onClose} width={1000}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 20 }}>
         <StatusBadge status={service.summary?.status} size="lg" />
         <div style={{ flex: 1 }} />
@@ -119,6 +329,49 @@ function ServiceDetailPanel({ service, onClose }) {
             {service.summary.error_message}
           </div>
         </div>
+      )}
+
+      <div style={{
+        marginTop: 28,
+        paddingTop: 20,
+        borderTop: '1px solid #e5e7eb'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 16, flexWrap: 'wrap' }}>
+          <h4 style={{ fontSize: 16, fontWeight: 700 }}>检测记录时间线</h4>
+          <span style={{ fontSize: 12, color: '#6b7280' }}>
+            共 {results.length} 条
+            {failedResults.length > 0 && <span style={{ color: '#dc2626' }}> · {failedResults.length} 次失败</span>}
+            {maintResults.length > 0 && <span style={{ color: '#d97706' }}> · {maintResults.length} 次维护</span>}
+          </span>
+        </div>
+
+        {results.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: 40, color: '#9ca3af' }}>
+            暂无检测记录
+          </div>
+        ) : (
+          <div style={{
+            maxHeight: 500,
+            overflowY: 'auto',
+            paddingRight: 8
+          }}>
+            {results.map(result => (
+              <ResultTimelineItem
+                key={result.id}
+                result={result}
+                onEditTags={setEditingResult}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+
+      {editingResult && (
+        <TagEditModal
+          result={editingResult}
+          onClose={() => setEditingResult(null)}
+          onSaved={handleTagsSaved}
+        />
       )}
     </Modal>
   )
