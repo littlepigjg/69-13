@@ -74,12 +74,22 @@ export function TagInput({ value = [], onChange, placeholder = '输入标签，�
   }
 
   const commitPending = () => {
-    if (input.trim()) {
-      const parts = input.split(/[,，\s]+/).filter(Boolean)
-      for (const part of parts) {
-        addTagByName(part)
-      }
+    if (!input.trim()) return
+    const parts = input.split(/[,，\s]+/).filter(Boolean)
+    const existingNames = value.map(t => t.name || t)
+    const newTags = parts
+      .map(p => p.trim())
+      .filter(p => p && !existingNames.includes(p))
+      .map(name => ({ name, id: null, color: null, _new: true }))
+
+    if (newTags.length > 0) {
+      const next = normalizeTags([...value, ...newTags])
+      onChange?.(next)
     }
+    setInput('')
+    setSuggestions([])
+    setShowDropdown(false)
+    setHighlightIdx(-1)
   }
 
   const handleKeyDown = (e) => {
@@ -88,13 +98,11 @@ export function TagInput({ value = [], onChange, placeholder = '输入标签，�
       if (highlightIdx >= 0 && suggestions[highlightIdx]) {
         addTag(suggestions[highlightIdx])
       } else if (input.trim()) {
-        addTagByName(input)
+        commitPending()
       }
     } else if (e.key === 'Backspace' && !input && value.length > 0) {
       const lastTag = value[value.length - 1]
-      if (!lastTag.deleted || lastTag.deleted === 0) {
-        removeTag(lastTag)
-      }
+      removeTag(lastTag)
     } else if (e.key === 'ArrowDown') {
       e.preventDefault()
       setShowDropdown(true)

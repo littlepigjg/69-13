@@ -14,6 +14,10 @@ export function TagBadge({ tag, onRemove, size = 'md', style, showDeleted = true
   const s = sizes[size] || sizes.md
   const bgLight = deleted ? 'rgba(156, 163, 175, 0.12)' : hexToRgba(color, 0.12)
 
+  const btnTitle = deleted
+    ? '移除与该已删除标签的关联'
+    : undefined
+
   return (
     <span
       title={deleted ? '该标签已删除（历史记录保留）' : undefined}
@@ -44,9 +48,10 @@ export function TagBadge({ tag, onRemove, size = 'md', style, showDeleted = true
         textDecoration: deleted ? 'line-through' : 'none',
         fontStyle: deleted ? 'italic' : 'normal'
       }}>{tag.name}</span>
-      {onRemove && !deleted && (
+      {onRemove && (
         <button
           onClick={e => { e.stopPropagation(); onRemove?.(tag) }}
+          title={btnTitle}
           style={{
             border: 'none',
             background: 'none',
